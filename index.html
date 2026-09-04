@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مساعد التحكم عن بعد والتعقب المشروّع</title>
+    <!-- ملف الـ Manifest لتحويل الموقع لتطبيق قابل للتحميل -->
+    <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22RemoteAssist%22,%22short_name%22:%22Assist%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%23da251c%22}">
+    <style>
+        :root {
+            --primary: #da251c; /* لون أني ديسك الشهير */
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --text: #212529;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card);
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .btn-install {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            display: none; /* يظهر فقط إذا كان التطبيق قابلاً للتثبيت */
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .id-box {
+            background: #e9ecef;
+            padding: 15px;
+            font-size: 24px;
+            text-align: center;
+            font-weight: bold;
+            letter-spacing: 2px;
+            border-radius: 5px;
+            color: var(--primary);
+            margin: 10px 0;
+        }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border-radius: 5px;
+            border: 1px solid #ced4da;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { opacity: 0.9; }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            background: #fff3cd;
+            color: #856404;
+            margin-top: 10px;
+            font-size: 14px;
+            text-align: center;
+        }
+        .control-panel {
+            margin-top: 20px;
+            display: none; /* يظهر بعد الاقتران */
+        }
+        #map-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2>🧑‍💻 تطبيق التحكم والموقع عن بُعد</h2>
+        <button id="installBtn" class="btn-install">📥 تحميل التطبيق على الجهاز</button>
+    </div>
+
+    <div class="grid">
+        <!-- قسم توليد الهوية والربط -->
+        <div class="card">
+            <h3>عنوان هذا الجهاز (المُضيف)</h3>
+            <p>شارك هذا الرمز مع الشخص الذي تريد منحه صلاحية التحكم برضاك:</p>
+            <div class="id-box" id="myId">--- ---</div>
+            
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+            
+            <h3>الاتصال بجهاز آخر (التحكم)</h3>
+            <p>أدخل رمز الجهاز الآخر للتحكم به ومعرفة مكانه بعد موافقته:</p>
+            <input type="text" id="targetId" placeholder="أدخل الرمز المكون من 6 أرقام">
+            <button onclick="connectToDevice()">🔗 طلب اقتران وتحكم</button>
+            <div class="status" id="connectionStatus">غير متصل بجهاز خارجي حالياً</div>
+        </div>
+    </div>
+
+    <!-- لوحة التحكم (تظهر للطرف المتحكِم بعد نجاح الاتصال) -->
+    <div class="card control-panel" id="controlPanel">
+        <h3>🎮 لوحة التحكم بالجهاز المقترن</h3>
+        <p>تم الاتصال بنجاح. يمكنك الآن إرسال الأوامر:</p>
+        <button onclick="requestLocation()" style="background-color: #007bff;">📍 طلب تتبع الموقع الجغرافي الحالي</button>
+        <div id="locationResult" style="margin-top:10px; font-weight:bold;"></div>
+        
+        <button onclick="sendRemoteCommand('open_google')" style="background-color: #6c757d; margin-top: 15px;">🌐 أمر: فتح متصفح جوجل عند الطرف الآخر</button>
+        <button onclick="sendRemoteCommand('alert_user')" style="background-color: #ffc107; color: black; margin-top: 10px;">🔔 أمر: إرسال تنبيه واهتزاز للجهاز</button>
+    </div>
+</div>
+
+<script>
+    // 1. توليد معرف عشوائي للجهاز مثل AnyDesk
+    const generatedId = Math.floor(100000 + Math.random() * 900000);
+    document.getElementById('myId').innerText = generatedId.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
+    // 2. محاكاة الاتصال والاقتران
+    function connectToDevice() {
+        const target = document.getElementById('targetId').value.trim();
+        if(target.length < 6) {
+            alert("الرجاء إدخال رمز صحيح مكون من 6 أرقام");
+            return;
+        }
+        
+        document.getElementById('connectionStatus').innerText = "جاري الاتصال والطلب من الطرف الآخر...";
+        document.getElementById('connectionStatus').style.background = "#d4edda";
+        document.getElementById('connectionStatus').style.color = "#155724";
+
+        // محاكاة قبول الطرف الآخر
+        setTimeout(() => {
+            document.getElementById('connectionStatus').innerText = `متصل الآن بالجهاز: ${target} (تم منح الصلاحيات بعلم صاحبه)`;
+            document.getElementById('controlPanel').style.display = "block";
+        }, 1500);
+    }
+
+    // 3. طلب الموقع الجغرافي (بعلم المستخدم وبإذن المتصفح)
+    function requestLocation() {
+        document.getElementById('locationResult').innerText = "جاري طلب إذن الموقع من الجهاز الآخر...";
+        
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                document.getElementById('locationResult').innerHTML = `
+                    ✅ تم استقبال الموقع بنجاح:<br>
+                    خط العرض: ${lat} <br> خط الطول: ${lon} <br>
+                    <a id="map-link" href="https://google.com{lat},${lon}" target="_blank">🗺️ اضغط هنا لفتح موقع الجهاز على خرائط جوجل</a>
+                `;
+            }, (error) => {
+                document.getElementById('locationResult').innerText = "❌ تم رفض إذن الوصول للموقع من قبل الطرف الآخر.";
+            });
+        } else {
+            document.getElementById('locationResult').innerText = "المتصفح لا يدعم تحديد المواقع.";
+        }
+    }
+
+    // 4. محاكاة إرسال أوامر تحكم عن بعد
+    function sendRemoteCommand(command) {
+        if(command === 'open_google') {
+            alert("محاكاة: تم إرسال أمر فتح نافذة ويب جديدة بنجاح في الجهاز المقترن.");
+        } else if(command === 'alert_user') {
+            alert("محاكاة: تم إرسال تنبيه واهتزاز للجهاز المقترن بنجاح.");
+        }
+    }
+
+    // 5. كود زر تحميل البرنامج وتثبيته كـ تطبيق (PWA)
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('installBtn').style.display = 'block';
+    });
+
+    document.getElementById('installBtn').addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                console.log('User accepted the install prompt');
+            }
+            deferredPrompt = null;
+            document.getElementById('installBtn').style.display = 'none';
+        }
+    });
+</script>
+
+</body>
+</html>
